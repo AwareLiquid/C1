@@ -65,6 +65,9 @@ def build_model(args, seed):
         d_head=args.d_model // args.n_heads,
         max_seq_len=args.max_seq_len,
         vocab_size=args.vocab_size,
+        dropout=0.0,
+        attention_dropout=0.0,
+        gwtb_n_heads=1,
         selective_decay=args.selective,
     )
     return MTLNNModel(cfg)
@@ -87,10 +90,15 @@ def eval_acc(model, task, lengths, device, batch=128):
 
 
 def supervised(args, seed, device):
-    """CE at the answer position only (masked -100 elsewhere), L ~ U{1..32}."""
+    """CE at the answer position only (masked -100 elsewhere), L ~ U{1..32}.
+
+    Recipe locked to M1 parity_lengthgen's GOOD config (ABLATIONS 2026-08-05
+    bisect): beta2=0.999, NO grad clipping (clip=1.0 vetoes the parity
+    breakthrough), weight_decay=0.01, cosine schedule."""
     task = ParityTask(seed=seed)
     model = build_model(args, seed).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, args.beta2),
+                            weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.supervised_steps)
     for step in range(args.supervised_steps):
         L = int(task.rng.integers(1, TRAIN_MAX + 1))
@@ -100,10 +108,11 @@ def supervised(args, seed, device):
         out = model(ids, labels=labels, use_cache=False)
         loss = out["loss"]
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if args.clip:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         opt.step()
         sched.step()
-        if step % 500 == 0 or step == args.supervised_steps - 1:
+        if step % 2000 == 0 or step == args.supervised_steps - 1:
             print(f"  sup step {step} loss {loss.item():.3f}", flush=True)
     accs = eval_acc(model, task, EVAL_LENGTHS, device)
     print(f"[supervised] accs={accs}", flush=True)
@@ -121,7 +130,8 @@ def grpo(args, seed, device, init_model=None):
     model = build_model(args, seed).to(device)
     if init_model is not None:
         model.load_state_dict(init_model.state_dict())
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, args.beta2),
+                            weight_decay=0.01)
     G = args.g
     t0 = time.time()
     for step in range(args.grpo_steps):
@@ -148,10 +158,11 @@ def grpo(args, seed, device, init_model=None):
         logp_sel = logp.gather(1, pred.unsqueeze(-1)).squeeze(-1)
         loss = -(logp_sel * adv).mean()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if args.clip:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         opt.step()
 
-        if step % 500 == 0 or step == args.grpo_steps - 1:
+        if step % 2000 == 0 or step == args.grpo_steps - 1:
             mean_r = r.mean().item()
             print(f"  grpo step {step} loss {loss.item():.3f} mean_r {mean_r:.3f} "
                   f"({time.time()-t0:.0f}s)", flush=True)
@@ -165,17 +176,21 @@ def main():
     ap.add_argument("--mode", choices=["supervised", "grpo", "grpo_finetune"],
                     default="grpo")
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    ap.add_argument("--d_model", type=int, default=416)
-    ap.add_argument("--n_layers", type=int, default=4)
-    ap.add_argument("--n_heads", type=int, default=13)
-    ap.add_argument("--n_kv_heads", type=int, default=1)
-    ap.add_argument("--max_seq_len", type=int, default=256)
+    # defaults = M1 parity_lengthgen GOOD recipe (ABLATIONS 2026-08-05)
+    ap.add_argument("--d_model", type=int, default=104)
+    ap.add_argument("--n_layers", type=int, default=2)
+    ap.add_argument("--n_heads", type=int, default=4)
+    ap.add_argument("--n_kv_heads", type=int, default=2)
+    ap.add_argument("--max_seq_len", type=int, default=1 + max(EVAL_LENGTHS) + 2)
     ap.add_argument("--vocab_size", type=int, default=rt_vocab_size(2))
     ap.add_argument("--selective", action="store_true")
-    ap.add_argument("--batch", type=int, default=64)
+    ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--supervised_steps", type=int, default=4000)
-    ap.add_argument("--grpo_steps", type=int, default=8000)
+    ap.add_argument("--beta2", type=float, default=0.999)
+    ap.add_argument("--clip", type=float, default=0.0,
+                    help="grad clip; 0 = none (clip=1.0 VETOES parity breakthrough)")
+    ap.add_argument("--supervised_steps", type=int, default=30000)
+    ap.add_argument("--grpo_steps", type=int, default=30000)
     ap.add_argument("--g", type=int, default=8, help="group size for GRPO")
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--out", default="results_24h/e1_liquid_grpo.jsonl")
