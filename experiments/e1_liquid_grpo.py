@@ -48,17 +48,21 @@ class ParityTask:
         self.lab0 = 4
         self.lab1 = 5
 
-    def encode(self, xs):
-        """Binary seq -> token ids (1/2 per bit) + label token appended."""
+    def encode_with_label(self, xs, ys):
+        """Return (input_seq, labels) both (B, L+1).
+        input  = [b0, ..., b_{L-1}, lab]  (model must emit lab AFTER all bits)
+        labels = [dummy, b1, ..., b_{L-1}, lab]  (shifted by one; dummy dropped
+                 by the model's labels[:, 1:] slice)"""
         toks = xs + self.tok0  # 0->1, 1->2
-        return toks  # (B, L)
-
-    def label_token(self, ys):
-        return ys + self.lab0  # 0->4, 1->5
+        lab_tok = ys + self.lab0  # 0->4, 1->5
+        inp = torch.cat([toks, lab_tok.unsqueeze(-1)], dim=-1)  # (B, L+1)
+        dummy = torch.zeros_like(toks[:, :1])
+        labels = torch.cat([dummy, toks[:, 1:], lab_tok.unsqueeze(-1)], dim=-1)
+        return inp, labels
 
     def sample(self, L, batch):
         xs, ys = gen_parity_batch(self.rng, L, batch)
-        return self.encode(xs), self.label_token(ys)
+        return self.encode_with_label(xs, ys)
 
 
 def build_model(args, seed):
@@ -77,19 +81,17 @@ def build_model(args, seed):
 
 
 def eval_acc(model, task, lengths, device, batch=128):
-    """Whole-sequence exact-match accuracy: does the model output the correct
-    label token for each input sequence (greedy decode, single token)?"""
+    """Whole-sequence exact-match: model sees bits, must output the label
+    token as its LAST generated token. Greedy decode of the final position."""
     model.eval()
     accs = {}
     with torch.no_grad():
         for L in lengths:
-            xs, lab = task.sample(L, batch)
-            xs, lab = xs.to(device), lab.to(device)
-            # append label positions: model sees seq, must produce label token
-            out = model(xs)  # forward; logits at each position
-            # take logits at last position -> predict label
-            logits = out["logits"][:, -1]  # (B, vocab)
-            pred = logits.argmax(-1)
+            xs, ys = gen_parity_batch(task.rng, L, batch)
+            inp = (xs + task.tok0).to(device)
+            lab = (ys + task.lab0).to(device)
+            out = model(inp)  # (B, L, V)
+            pred = out["logits"][:, -1].argmax(-1)  # label prediction
             acc = (pred == lab).float().mean().item()
             accs[L] = round(acc, 3)
     model.train()
@@ -105,11 +107,12 @@ def supervised(args, seed, device):
     step = 0
     while step < steps:
         L = int(task.rng.integers(1, args.train_max + 1))
-        xs, lab = task.sample(L, args.batch)
-        xs, lab = xs.to(device), lab.to(device)
+        inp, labels = task.sample(L, args.batch)
+        inp, labels = inp.to(device), labels.to(device)
         opt.zero_grad()
-        out = model(xs, labels=lab, use_cache=False)
-        loss = out.get("lm_loss", out["loss"])
+        out = model(inp, labels=labels, use_cache=False)
+        # NOTE: lm_loss is detached in the model; use the trainable total loss
+        loss = out["loss"]
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
@@ -135,13 +138,15 @@ def grpo(args, seed, device, init_model=None):
     while step < args.grpo_steps:
         # sample one problem per group; generate G label tokens per prompt
         L = int(task.rng.integers(1, args.train_max + 1))
-        xs, lab = task.sample(L, args.batch)
+        xs, ys = gen_parity_batch(task.rng, L, args.batch)
+        inp = xs + task.tok0
+        lab = ys + task.lab0
         # repeat each prompt G times for group sampling
-        xs_g = xs.repeat_interleave(G, dim=0).to(device)
+        inp_g = inp.repeat_interleave(G, dim=0).to(device)
         lab_g = lab.repeat_interleave(G, dim=0).to(device)
         # sample label tokens with temperature (exploration)
         with torch.no_grad():
-            out = model(xs_g)
+            out = model(inp_g)
             logits = out["logits"][:, -1] / args.temperature
             probs = torch.softmax(logits, -1)
             pred = torch.multinomial(probs, 1).squeeze(-1)
@@ -153,7 +158,7 @@ def grpo(args, seed, device, init_model=None):
         adv = adv.view(-1)
         # policy gradient: maximize log prob of chosen tokens weighted by adv
         opt.zero_grad()
-        out = model(xs_g)
+        out = model(inp_g)
         logits = out["logits"][:, -1]
         logp = torch.log_softmax(logits, -1)
         logp_sel = logp.gather(1, pred.unsqueeze(-1)).squeeze(-1)
