@@ -51,14 +51,21 @@ C1 的翻译：
 docs/
   ARCHITECTURE_C1.md        # 五层认知栈完整 spec
   STRATEGY_VS_DEEPSEEK_KIMI.md  # 迭代逻辑分析与启示
+  EXPERIMENT_E1_LIQUID_GRPO.md  # 液态 GRPO（RL 涌现推理，对标 R1）
+  EXPERIMENT_E2_MTP.md          # MTP 前瞻预测（对标 DeepSeek MTP）
+  EXPERIMENT_E3_TEMPORAL_SCALING.md # 时间尺度扩容（液态版 MoE 实验）
   ROADMAP.md                # 实验路线图
-experiments/                # C1 实验（首个：液态 GRPO）
+experiments/
+  e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
+  e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
+  e3_temporal_scaling.py    # E3 可跑脚本（n_scales x topk 矩阵）
 README.md
 ```
 
 ## 状态
 
-- 🔴 规划中：仓库初始化，首个实验（液态 GRPO）设计
+- 🔴 规划中：三个实验已设计并编码（E1/E2/E3），待 GPU 验证
+- 🟢 进行中：125M 收敛 + selective_decay A/B（DGX Spark）
 - 借鉴基础：MT-LNN 已验证的 O(1) 内存 / 跨窗口记忆 / 稀疏共振 / 预测编码
 
 ---
