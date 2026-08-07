@@ -183,7 +183,13 @@ def main():
     ap.add_argument("--n_kv_heads", type=int, default=2)
     ap.add_argument("--max_seq_len", type=int, default=1 + max(EVAL_LENGTHS) + 2)
     ap.add_argument("--vocab_size", type=int, default=rt_vocab_size(2))
-    ap.add_argument("--selective", action="store_true")
+    ap.add_argument("--selective", dest="selective", action="store_true",
+                    default=True,
+                    help="selective_decay=True (DEFAULT: the liquid arm; M1's "
+                         "proven parity breakthrough is selective 3/3 at L>=48, "
+                         "stock arm is the 0/3 failure control)")
+    ap.add_argument("--no-selective", dest="selective", action="store_false",
+                    help="disable selective_decay (stock arm control)")
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--beta2", type=float, default=0.999)
