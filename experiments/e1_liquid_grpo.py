@@ -25,7 +25,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "M1"))
+from _m1_bootstrap import bootstrap_m1  # ????????(? _m1_bootstrap.py)
+bootstrap_m1()
 
 import numpy as np
 import torch

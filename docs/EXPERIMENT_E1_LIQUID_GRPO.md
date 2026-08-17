@@ -76,7 +76,7 @@ GRPO 成功后，下一步是**系统2 深度递归**：液态模型在"难问�
 
 ```bash
 # 依赖 M1 仓库的 mt_lnn 包（液态模型）
-git clone https://github.com/everest-an/M1
+git clone https://github.com/AwareLiquid/M1  # ????
 pip install -r M1/requirements.txt
 
 # 运行 E1（parity 长度外推，GRPO）
