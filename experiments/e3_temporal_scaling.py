@@ -64,10 +64,13 @@ def run_parity(args, seed, device):
         xs = rng.integers(0, 2, size=(args.batch, L)).astype("int64")
         ys = (xs.sum(axis=1) % 2).astype("int64")
         xs_t = torch.from_numpy(xs + tok0).to(device)
-        lab_t = torch.from_numpy(ys + lab0).to(device)
+        # M1 shift 语义（e1 同款协议）：位置 t 预测 labels[t+1]，因此把答案
+        # 挂在序列末位（labels[:, -1]），由位置 L-2 的 logits 预测。
+        lab_t = torch.full_like(xs_t, -100)
+        lab_t[:, -1] = torch.from_numpy(ys + lab0).to(device)
         opt.zero_grad()
         out = model(xs_t, labels=lab_t)
-        loss = out.get("lm_loss", out["loss"])
+        loss = out["loss"]   # 训练目标（lm_loss 是 detach 后的纯指标，不可反传）
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
@@ -82,7 +85,7 @@ def run_parity(args, seed, device):
             xs_t = torch.from_numpy(xs + tok0).to(device)
             lab_t = torch.from_numpy(ys + lab0).to(device)
             out = model(xs_t)
-            pred = out["logits"][:, -1].argmax(-1)
+            pred = out["logits"][:, -2].argmax(-1)   # 预测末位答案
             accs[L] = round((pred == lab_t).float().mean().item(), 3)
     print(f"  [n_scales={args.n_scales} topk={args.topk}] parity accs={accs}", flush=True)
     return accs
