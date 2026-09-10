@@ -1,0 +1,9 @@
+﻿__pycache__/
+*.pyc
+data/
+data_dev/
+results/
+results_smoke/
+*.jsonl
+c1_final.log
+

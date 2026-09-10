@@ -1,0 +1,42 @@
+name: Experiments
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: "1"
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -q torch --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install -q numpy transformers tokenizers
+      - name: E1 liquid GRPO (supervised smoke)
+        run: |
+          python experiments/e1_liquid_grpo.py --mode supervised --seeds 0 \
+            --d_model 104 --n_layers 1 --n_heads 4 --n_kv_heads 2 \
+            --max_seq_len 32 --vocab_size 200 --supervised_steps 3 \
+            --out results_smoke/ci_e1.jsonl
+      - name: E2 MTP (all three modes, synthetic data)
+        run: |
+          python experiments/e2_mtp.py --mode baseline --smoke --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e2.jsonl
+          python experiments/e2_mtp.py --mode mtp --smoke --k 3 --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e2.jsonl
+          python experiments/e2_mtp.py --mode state-mtp --smoke --k 2 --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e2.jsonl
+      - name: E3 temporal scaling (parity smoke)
+        run: |
+          python experiments/e3_temporal_scaling.py --n_scales 5 --topk 2 \
+            --d_model 104 --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 \
+            --parity_steps 3 --seeds 0 --out results_smoke/ci_e3.jsonl

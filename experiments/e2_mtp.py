@@ -38,6 +38,14 @@ def load_data(data_dir):
     return train, val
 
 
+def synthetic_data(seq_len, n_chunks=64, vocab_size=200, seed=0):
+    """Random uint16 corpus for --smoke: no data files needed."""
+    g = torch.Generator().manual_seed(seed)
+    n = n_chunks * seq_len
+    t = torch.randint(1, vocab_size, (n,), generator=g, dtype=torch.long)
+    return t, t  # train == val for the smoke (PPL is meaningless, pipeline only)
+
+
 def make_chunks(t, n):
     return t[: len(t) // n * n].view(-1, n)
 
@@ -70,15 +78,19 @@ class MTPWrapper(nn.Module):
             self.state_heads = StateLookahead(cfg.d_model, k)
 
     def forward(self, x, labels=None):
-        # base forward -> hidden states
-        out = self.model(x)  # out["logits"], out["hidden"] if exposed
-        h = out.get("hidden_states", out["logits"])
-        # h may be logits (B,T,V) -> treat as (B,T,D) if D==V
-        if h.dim() == 3 and h.size(-1) == 50257:
-            h = h  # logits used as proxy (fallback)
+        # capture the final hidden (output of final_norm, input to lm_head)
+        captured = {}
+
+        def hook(module, inp, out):
+            captured["h"] = out  # (B, T, D) — live graph, grads flow to heads
+
+        handle = self.model.final_norm.register_forward_hook(hook)
+        self.model(x)
+        handle.remove()
+        h = captured["h"]
         B, T, D = h.shape
-        losses = []
         total = 0.0
+        losses = []
         for j in range(self.k):
             # predict x_{t+j} from h_t (shifted target)
             if T - j <= 0:
@@ -92,17 +104,17 @@ class MTPWrapper(nn.Module):
                 ce = nn.functional.cross_entropy(
                     logits_j.reshape(-1, logits_j.size(-1)),
                     target.reshape(-1))
-                total += w * ce
+                total = total + w * ce
             losses.append(logits_j)
         if self.use_state:
-            # state look-ahead: predict h_{t+j} (MSE on normalized states)
+            # state look-ahead: regress future states h_{t+j} (MSE, detached target)
             for j in range(self.k):
                 if T - j <= 0:
                     break
                 pred = self.state_heads.heads[j](h[:, : T - j])
-                target = h[:, j:]
+                target = h[:, j:].detach()
                 mse = nn.functional.mse_loss(pred, target)
-                total += 0.5 * mse
+                total = total + 0.5 * mse
         if labels is not None:
             return {"loss": total, "lm_loss": total}
         return {"logits": losses[-1] if losses else h}
@@ -111,7 +123,10 @@ class MTPWrapper(nn.Module):
 def train_eval(args, seed, mode):
     torch.manual_seed(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    train, val = load_data(args.data_dir)
+    if args.smoke:
+        train, val = synthetic_data(args.seq_len, 64, args.vocab_size, seed)
+    else:
+        train, val = load_data(args.data_dir)
     tr = make_chunks(train, args.seq_len)
     va = make_chunks(val, args.seq_len)
     print(f"  [seed {seed}] {mode} chunks={len(tr)}/{len(va)}", flush=True)
@@ -120,6 +135,7 @@ def train_eval(args, seed, mode):
         d_model=args.d_model, n_layers=args.n_layers, n_heads=args.n_heads,
         n_kv_heads=args.n_kv_heads, d_head=args.d_model // args.n_heads,
         max_seq_len=args.seq_len, vocab_size=args.vocab_size,
+        gwtb_n_heads=1,  # tiny/smoke configs: d_gw=13 must divide heads (E1 同款)
     )
     k = 1 if mode == "baseline" else args.k
     use_state = mode == "state-mtp"
@@ -181,7 +197,9 @@ def main():
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--data_dir", default="data")
-    ap.add_argument("--out", default="results_24h/e2_mtp.jsonl")
+    ap.add_argument("--smoke", action="store_true",
+                    help="use synthetic random data (pipeline check, no data files)")
+    ap.add_argument("--out", default="results/e2_mtp.jsonl")
     args = ap.parse_args()
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
