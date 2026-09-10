@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""E3 — Temporal-scale scaling: does adding time scales (capacity) with
+﻿#!/usr/bin/env python3
+"""E3 â€” Temporal-scale scaling: does adding time scales (capacity) with
 top-k gating (cost) improve the liquid model? (C1's MoE-style experiment.)
 
 Configs: --n_scales 5|8|16 with --topk 2|5|8|dense.
@@ -37,6 +37,7 @@ def build_model(args, seed):
         n_kv_heads=args.n_kv_heads,
         d_head=args.d_model // args.n_heads,
         max_seq_len=args.seq_len,
+        gwtb_n_heads=1,  # tiny/smoke configs: d_gw=13 must divide heads
         vocab_size=args.vocab_size,
         n_time_scales=args.n_scales,
     )
@@ -64,13 +65,13 @@ def run_parity(args, seed, device):
         xs = rng.integers(0, 2, size=(args.batch, L)).astype("int64")
         ys = (xs.sum(axis=1) % 2).astype("int64")
         xs_t = torch.from_numpy(xs + tok0).to(device)
-        # M1 shift 语义（e1 同款协议）：位置 t 预测 labels[t+1]，因此把答案
-        # 挂在序列末位（labels[:, -1]），由位置 L-2 的 logits 预测。
+        # M1 shift è¯­ä¹‰ï¼ˆe1 åŒæ¬¾åè®®ï¼‰ï¼šä½ç½® t é¢„æµ‹ labels[t+1]ï¼Œå› æ­¤æŠŠç­”æ¡ˆ
+        # æŒ‚åœ¨åºåˆ—æœ«ä½ï¼ˆlabels[:, -1]ï¼‰ï¼Œç”±ä½ç½® L-2 çš„ logits é¢„æµ‹ã€‚
         lab_t = torch.full_like(xs_t, -100)
         lab_t[:, -1] = torch.from_numpy(ys + lab0).to(device)
         opt.zero_grad()
         out = model(xs_t, labels=lab_t)
-        loss = out["loss"]   # 训练目标（lm_loss 是 detach 后的纯指标，不可反传）
+        loss = out["loss"]   # è®­ç»ƒç›®æ ‡ï¼ˆlm_loss æ˜¯ detach åŽçš„çº¯æŒ‡æ ‡ï¼Œä¸å¯åä¼ ï¼‰
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
@@ -85,7 +86,7 @@ def run_parity(args, seed, device):
             xs_t = torch.from_numpy(xs + tok0).to(device)
             lab_t = torch.from_numpy(ys + lab0).to(device)
             out = model(xs_t)
-            pred = out["logits"][:, -2].argmax(-1)   # 预测末位答案
+            pred = out["logits"][:, -2].argmax(-1)   # é¢„æµ‹æœ«ä½ç­”æ¡ˆ
             accs[L] = round((pred == lab_t).float().mean().item(), 3)
     print(f"  [n_scales={args.n_scales} topk={args.topk}] parity accs={accs}", flush=True)
     return accs
