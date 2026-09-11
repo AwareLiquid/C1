@@ -59,18 +59,23 @@ docs/
   EXPERIMENT_E1_LIQUID_GRPO.md  # 液态 GRPO（RL 涌现推理，对标 R1）
   EXPERIMENT_E2_MTP.md          # MTP 前瞻预测（对标 DeepSeek MTP）
   EXPERIMENT_E3_TEMPORAL_SCALING.md # 时间尺度扩容（液态版 MoE 实验）
+  EXPERIMENT_E5_MULTI_HORIZON.md    # 多视野统一输出（EnergyTS 对标）
+  EXPERIMENT_E6_ZERO_SHOT_TRANSFER.md # 跨域零样本迁移（EnergyTS 对标）
   ROADMAP.md                # 实验路线图
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
   e3_temporal_scaling.py    # E3 可跑脚本（n_scales x topk 矩阵）
+  e5_multi_horizon.py       # E5 可跑脚本（unified/dedicated 多视野）
+  e6_zero_shot_transfer.py  # E6 可跑脚本（留一域零样本迁移）
 README.md
 ```
 
 ## 状态
 
 - 🟡 **E1 液态 GRPO**：监督臂云 GPU 首跑完成——长度外推 acc 1.0 / 0.92 / 0.59 / 0.58 / 0.56（seed0，长度 32→128）；GRPO 臂进行中
-- 🔴 规划中：E2（MTP 前瞻）/ E3（时间尺度扩容）待 GPU
+- 🟡 E2（MTP 前瞻）/ E3（时间尺度扩容）：代码就绪 + 冒烟过 CI，待 GPU 全量
+- 🟡 **E5 多视野统一 / E6 跨域零样本（EnergyTS 对标，2026-09 新增）**：设计完成 + 冒烟可跑——短↔长统一头、冷启能力边界
 - 🟢 进行中：125M 收敛 + selective_decay A/B（DGX Spark）
 - 借鉴基础：MT-LNN 已验证的 O(1) 内存 / 跨窗口记忆 / 稀疏共振 / 预测编码
 

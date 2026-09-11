@@ -40,3 +40,16 @@ jobs:
           python experiments/e3_temporal_scaling.py --n_scales 5 --topk 2 \
             --d_model 104 --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 \
             --parity_steps 3 --seeds 0 --out results_smoke/ci_e3.jsonl
+      - name: E5 multi-horizon (unified + dedicated smoke)
+        run: |
+          python experiments/e5_multi_horizon.py --mode unified --smoke --horizons 8 16 \
+            --d_model 104 --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 \
+            --steps 3 --seeds 0 --out results_smoke/ci_e5.jsonl
+          python experiments/e5_multi_horizon.py --mode dedicated --smoke --horizons 8 16 \
+            --d_model 104 --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 \
+            --steps 3 --seeds 0 --out results_smoke/ci_e5.jsonl
+      - name: E6 zero-shot transfer (smoke)
+        run: |
+          python experiments/e6_zero_shot_transfer.py --smoke --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --n_chunks 16 \
+            --steps 3 --seeds 0 --out results_smoke/ci_e6.jsonl
