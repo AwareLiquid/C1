@@ -1,0 +1,8 @@
+# C1 runtime deps (self-contained; no M1 checkout required).
+# mt_lnn/ and benchmarks/reasoning_tasks.py are vendored in-repo.
+torch>=2.0.0
+numpy>=1.24.0
+transformers>=4.40.0
+tokenizers>=0.15.0
+datasets>=2.14.0
+tqdm>=4.65.0
