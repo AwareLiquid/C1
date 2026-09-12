@@ -25,9 +25,8 @@ from mt_lnn.model import MTLNNModel
 
 def build_model(args, seed):
     torch.manual_seed(seed)
-    # NOTE: MTLNNConfig.n_time_scales already exists; top-k gating is applied
-    # by the sparse-resonance path inside MTLNNLayer (top_k knob). We pass both
-    # through and let the layer gate if topk < n_scales.
+    # MTLNNLayer gates scales only when sparse_resonance_kernel=True; "dense" keeps all active.
+    dense = args.topk == "dense"
     cfg = MTLNNConfig(
         d_model=args.d_model,
         n_layers=args.n_layers,
@@ -38,15 +37,10 @@ def build_model(args, seed):
         gwtb_n_heads=1,  # tiny/smoke configs: d_gw=13 must divide heads
         vocab_size=args.vocab_size,
         n_time_scales=args.n_scales,
+        sparse_resonance_kernel=not dense,
+        sparse_resonance_top_k=(args.n_scales if dense else int(args.topk)),
     )
-    model = MTLNNModel(cfg)
-    # apply top-k sparse resonance if requested (torch.topk over scale weights)
-    if args.topk != "dense":
-        k = int(args.topk)
-        for m in model.modules():
-            if hasattr(m, "n_time_scales") and hasattr(m, "topk"):
-                m.topk = k
-    return model
+    return MTLNNModel(cfg)
 
 
 def run_parity(args, seed, device):
@@ -94,7 +88,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n_scales", type=int, default=5, choices=[5, 8, 16])
     ap.add_argument("--topk", default="dense", help="2|5|8|dense")
-    ap.add_argument("--d_model", type=int, default=256)
+    ap.add_argument("--d_model", type=int, default=208)
     ap.add_argument("--n_layers", type=int, default=4)
     ap.add_argument("--n_heads", type=int, default=13)
     ap.add_argument("--n_kv_heads", type=int, default=1)
