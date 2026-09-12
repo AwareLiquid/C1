@@ -75,9 +75,9 @@ GRPO 成功后，下一步是**系统2 深度递归**：液态模型在"难问�
 ## 7. 依赖与运行
 
 ```bash
-# 依赖 M1 仓库的 mt_lnn 包（液态模型）
-git clone https://github.com/AwareLiquid/M1  # ????
-pip install -r M1/requirements.txt
+# mt_lnn 与 benchmarks/reasoning_tasks.py 已 vendor 进本仓库（见 VENDORED_M1.md），
+# 不再需要外部 M1 checkout。
+pip install -r requirements.txt
 
 # 运行 E1（parity 长度外推，GRPO）
 python experiments/e1_liquid_grpo.py --mode grpo --seeds 0 1 2 --g 8

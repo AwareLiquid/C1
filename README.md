@@ -53,6 +53,9 @@ C1 的翻译：
 ## 仓库结构
 
 ```
+mt_lnn/                     # 自带的液态模型包（从 AwareLiquid/M1 vendor，见 VENDORED_M1.md）
+benchmarks/
+  reasoning_tasks.py        # parity 等合成推理任务（E1 用）
 docs/
   ARCHITECTURE_C1.md        # 五层认知栈完整 spec
   STRATEGY_VS_DEEPSEEK_KIMI.md  # 迭代逻辑分析与启示
@@ -61,13 +64,16 @@ docs/
   EXPERIMENT_E3_TEMPORAL_SCALING.md # 时间尺度扩容（液态版 MoE 实验）
   EXPERIMENT_E5_MULTI_HORIZON.md    # 多视野统一输出（EnergyTS 对标）
   EXPERIMENT_E6_ZERO_SHOT_TRANSFER.md # 跨域零样本迁移（EnergyTS 对标）
-  ROADMAP.md                # 实验路线图
+  ROADMAP_2B.md             # 实验路线图
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
   e3_temporal_scaling.py    # E3 可跑脚本（n_scales x topk 矩阵）
   e5_multi_horizon.py       # E5 可跑脚本（unified/dedicated 多视野）
   e6_zero_shot_transfer.py  # E6 可跑脚本（留一域零样本迁移）
+  prepare_data_e2.py        # E2 数据管线（WikiText-103 → uint16 .bin）
+requirements.txt            # 独立运行依赖（无需 M1 checkout）
+VENDORED_M1.md              # vendor 溯源（来源/commit/范围）
 README.md
 ```
 
