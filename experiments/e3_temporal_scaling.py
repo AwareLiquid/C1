@@ -39,6 +39,7 @@ def build_model(args, seed):
         n_time_scales=args.n_scales,
         sparse_resonance_kernel=not dense,
         sparse_resonance_top_k=(args.n_scales if dense else int(args.topk)),
+        selective_decay=args.selective,
     )
     return MTLNNModel(cfg)
 
@@ -92,6 +93,9 @@ def main():
     ap.add_argument("--n_layers", type=int, default=4)
     ap.add_argument("--n_heads", type=int, default=13)
     ap.add_argument("--n_kv_heads", type=int, default=1)
+    ap.add_argument("--selective", dest="selective", action="store_true", default=True,
+                    help="selective_decay (M1's proven parity arm; default on so parity is learnable)")
+    ap.add_argument("--no-selective", dest="selective", action="store_false")
     ap.add_argument("--seq_len", type=int, default=256)
     ap.add_argument("--vocab_size", type=int, default=8)
     ap.add_argument("--batch", type=int, default=64)
