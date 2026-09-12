@@ -1,10 +1,11 @@
 ﻿#!/usr/bin/env python3
-"""E3 â€” Temporal-scale scaling: does adding time scales (capacity) with
+"""E3 — Temporal-scale scaling: does adding time scales (capacity) with
 top-k gating (cost) improve the liquid model? (C1's MoE-style experiment.)
 
 Configs: --n_scales 5|8|16 with --topk 2|5|8|dense.
 Capacity is nearly free (scales are scalars); gating keeps compute flat.
-Tasks: parity length-gen (fast) + optional WikiText PPL.
+Task: M1's proven parity length-gen protocol (same gen_parity as E1), so the
+capability is actually learnable and configs can be compared.
 
 Run:
   python experiments/e3_temporal_scaling.py --n_scales 5 --topk dense
@@ -17,10 +18,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import numpy as np
 import torch
 
 from mt_lnn.config import MTLNNConfig
 from mt_lnn.model import MTLNNModel
+from benchmarks.reasoning_tasks import gen_parity, vocab_size as rt_vocab_size
+
+TRAIN_MAX = 32
+EVAL_LENGTHS = (32, 48, 64, 96, 128)
 
 
 def build_model(args, seed):
@@ -45,42 +51,35 @@ def build_model(args, seed):
 
 
 def run_parity(args, seed, device):
-    """Quick capability probe: parity length-gen whole-sequence recall."""
     model = build_model(args, seed).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=3e-4)
-    rng = __import__("numpy").random.default_rng(seed)
-    tok0, tok1, lab0 = 1, 2, 4
-
-    steps = args.parity_steps
-    step = 0
-    while step < steps:
-        L = int(rng.integers(1, 33))
-        xs = rng.integers(0, 2, size=(args.batch, L)).astype("int64")
-        ys = (xs.sum(axis=1) % 2).astype("int64")
-        xs_t = torch.from_numpy(xs + tok0).to(device)
-        # M1 shift è¯­ä¹‰ï¼ˆe1 åŒæ¬¾åè®®ï¼‰ï¼šä½ç½® t é¢„æµ‹ labels[t+1]ï¼Œå› æ­¤æŠŠç­”æ¡ˆ
-        # æŒ‚åœ¨åºåˆ—æœ«ä½ï¼ˆlabels[:, -1]ï¼‰ï¼Œç”±ä½ç½® L-2 çš„ logits é¢„æµ‹ã€‚
-        lab_t = torch.full_like(xs_t, -100)
-        lab_t[:, -1] = torch.from_numpy(ys + lab0).to(device)
-        opt.zero_grad()
-        out = model(xs_t, labels=lab_t)
-        loss = out["loss"]   # è®­ç»ƒç›®æ ‡ï¼ˆlm_loss æ˜¯ detach åŽçš„çº¯æŒ‡æ ‡ï¼Œä¸å¯åä¼ ï¼‰
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999),
+                            weight_decay=0.01)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.parity_steps)
+    rng = np.random.default_rng(seed)
+    for step in range(args.parity_steps):
+        L = int(rng.integers(1, TRAIN_MAX + 1))
+        b = gen_parity(args.batch, L, rng)
+        ids = torch.from_numpy(b.tokens).to(device)
+        labels = torch.full_like(ids, -100)
+        labels[:, b.ans_pos] = torch.from_numpy(b.answer).to(device)
+        opt.zero_grad(set_to_none=True)
+        out = model(ids, labels=labels, use_cache=False)
+        out["loss"].backward()
         opt.step()
-        step += 1
+        sched.step()
+        if step % 2000 == 0 or step == args.parity_steps - 1:
+            print(f"    step {step} loss {out['loss'].item():.3f}", flush=True)
 
     model.eval()
+    eval_rng = np.random.default_rng(10_000 + seed)
     accs = {}
     with torch.no_grad():
-        for L in (32, 48, 64, 96):
-            xs = rng.integers(0, 2, size=(256, L)).astype("int64")
-            ys = (xs.sum(axis=1) % 2).astype("int64")
-            xs_t = torch.from_numpy(xs + tok0).to(device)
-            lab_t = torch.from_numpy(ys + lab0).to(device)
-            out = model(xs_t)
-            pred = out["logits"][:, -2].argmax(-1)   # é¢„æµ‹æœ«ä½ç­”æ¡ˆ
-            accs[L] = round((pred == lab_t).float().mean().item(), 3)
+        for L in EVAL_LENGTHS:
+            b = gen_parity(args.batch, L, eval_rng)
+            ids = torch.from_numpy(b.tokens).to(device)
+            ans = torch.from_numpy(b.answer).to(device)
+            pred = model(ids)["logits"][:, b.ans_pos - 1].argmax(-1)
+            accs[L] = round((pred == ans).float().mean().item(), 3)
     print(f"  [n_scales={args.n_scales} topk={args.topk}] parity accs={accs}", flush=True)
     return accs
 
@@ -89,17 +88,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n_scales", type=int, default=5, choices=[5, 8, 16])
     ap.add_argument("--topk", default="dense", help="2|5|8|dense")
-    ap.add_argument("--d_model", type=int, default=208)
-    ap.add_argument("--n_layers", type=int, default=4)
-    ap.add_argument("--n_heads", type=int, default=13)
-    ap.add_argument("--n_kv_heads", type=int, default=1)
+    ap.add_argument("--d_model", type=int, default=104)
+    ap.add_argument("--n_layers", type=int, default=2)
+    ap.add_argument("--n_heads", type=int, default=4)
+    ap.add_argument("--n_kv_heads", type=int, default=2)
     ap.add_argument("--selective", dest="selective", action="store_true", default=True,
                     help="selective_decay (M1's proven parity arm; default on so parity is learnable)")
     ap.add_argument("--no-selective", dest="selective", action="store_false")
-    ap.add_argument("--seq_len", type=int, default=256)
-    ap.add_argument("--vocab_size", type=int, default=8)
-    ap.add_argument("--batch", type=int, default=64)
-    ap.add_argument("--parity_steps", type=int, default=3000)
+    ap.add_argument("--seq_len", type=int, default=1 + max(EVAL_LENGTHS) + 2)
+    ap.add_argument("--vocab_size", type=int, default=rt_vocab_size(2))
+    ap.add_argument("--batch", type=int, default=128)
+    ap.add_argument("--lr", type=float, default=3e-4)
+    ap.add_argument("--parity_steps", type=int, default=30000)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--out", default="results_24h/e3_temporal_scaling.jsonl")
     args = ap.parse_args()
