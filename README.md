@@ -65,6 +65,7 @@ docs/
   EXPERIMENT_E5_MULTI_HORIZON.md    # 多视野统一输出（EnergyTS 对标）
   EXPERIMENT_E6_ZERO_SHOT_TRANSFER.md # 跨域零样本迁移（EnergyTS 对标）
   ROADMAP_2B.md             # 实验路线图
+  S1_RESULTS.md             # S1 结果（E1 GRPO / E2 MTP / E3 时间尺度）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
