@@ -20,8 +20,6 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from _m1_bootstrap import bootstrap_m1  # noqa: E402  (resolves M1 public mirror)
-bootstrap_m1()
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
