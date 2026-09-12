@@ -75,42 +75,44 @@ class MTPWrapper(nn.Module):
         if use_state:
             self.state_heads = StateLookahead(cfg.d_model, k)
 
-    def forward(self, x, labels=None):
-        # capture the final hidden (output of final_norm, input to lm_head)
+    def hidden(self, x):
         captured = {}
 
         def hook(module, inp, out):
-            captured["h"] = out  # (B, T, D) — live graph, grads flow to heads
+            captured["h"] = out
 
         handle = self.model.final_norm.register_forward_hook(hook)
         self.model(x)
         handle.remove()
-        h = captured["h"]
+        return captured["h"]
+
+    def forward(self, x, labels=None):
+        h = self.hidden(x)
         B, T, D = h.shape
         total = 0.0
         losses = []
         for j in range(self.k):
-            # predict x_{t+j} from h_t (shifted target)
-            if T - j <= 0:
+            horizon = j + 1
+            if T - horizon <= 0:
                 break
-            logits_j = self.token_heads[j](h[:, : T - j])  # (B, T-j, V)
+            logits_j = self.token_heads[j](h[:, : T - horizon])
             if labels is not None:
-                target = labels[:, j:] if j > 0 else labels
-                if target.shape[1] > T - j:
-                    target = target[:, : T - j]
-                w = 1.0 / (2 ** j)  # decaying weight: 1, 0.5, 0.25
+                target = labels[:, horizon:]
+                if target.shape[1] > T - horizon:
+                    target = target[:, : T - horizon]
+                w = 1.0 / (2 ** j)
                 ce = nn.functional.cross_entropy(
                     logits_j.reshape(-1, logits_j.size(-1)),
                     target.reshape(-1))
                 total = total + w * ce
             losses.append(logits_j)
         if self.use_state:
-            # state look-ahead: regress future states h_{t+j} (MSE, detached target)
             for j in range(self.k):
-                if T - j <= 0:
+                horizon = j + 1
+                if T - horizon <= 0:
                     break
-                pred = self.state_heads.heads[j](h[:, : T - j])
-                target = h[:, j:].detach()
+                pred = self.state_heads.heads[j](h[:, : T - horizon])
+                target = h[:, horizon:].detach()
                 mse = nn.functional.mse_loss(pred, target)
                 total = total + 0.5 * mse
         if labels is not None:
@@ -164,14 +166,15 @@ def train_eval(args, seed, mode):
         if step >= args.steps:
             break
 
-    # eval PPL (CE only, first token head)
     model.eval()
     total_ce, n = 0.0, 0
     with torch.no_grad():
         for i in range(0, len(va), args.batch):
             inp = va[i : i + args.batch].to(device)
-            out = model.model(inp, labels=inp)
-            ce = out.get("lm_loss", out["loss"])
+            h = model.hidden(inp)
+            logits = model.token_heads[0](h[:, :-1])
+            ce = nn.functional.cross_entropy(
+                logits.reshape(-1, logits.size(-1)), inp[:, 1:].reshape(-1))
             total_ce += ce.item()
             n += 1
     ppl = math.exp(min(total_ce / max(n, 1), 20.0))
