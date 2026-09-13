@@ -66,6 +66,7 @@ docs/
   EXPERIMENT_E6_ZERO_SHOT_TRANSFER.md # 跨域零样本迁移（EnergyTS 对标）
   ROADMAP_2B.md             # 实验路线图
   S1_RESULTS.md             # S1 结果（E1 GRPO / E2 MTP / E3 时间尺度）
+  S2_RESULTS.md             # S2 结果（E3 已验证协议 / E2 长预算 / E1 热启 GRPO）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
