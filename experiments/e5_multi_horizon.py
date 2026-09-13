@@ -89,7 +89,7 @@ class MultiHorizonWrapper(nn.Module):
             return {"hidden": hidden}
 
         T = hidden.shape[1]
-        total = 0.0
+        total = hidden.sum() * 0.0
         per_h = {}
         for h, head, w in zip(self.horizons, self.heads, self._weights()):
             if T - h <= 0:
@@ -124,9 +124,10 @@ def train_eval(args, seed, mode):
         n_time_scales=args.n_scales,
     )
 
-    # unified: one model over all horizons; dedicated: one model per horizon
-    runs = [(mode, list(args.horizons))] if mode == "unified" else \
-           [("dedicated", [h]) for h in args.horizons]
+    # horizons must be < seq_len (a head at h == seq_len has no target)
+    horizons = [h for h in args.horizons if h < args.seq_len]
+    runs = [(mode, list(horizons))] if mode == "unified" else \
+           [("dedicated", [h]) for h in horizons]
 
     results = {}
     for run_mode, horizons in runs:
