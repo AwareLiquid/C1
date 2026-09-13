@@ -68,6 +68,7 @@ docs/
   S1_RESULTS.md             # S1 结果（E1 GRPO / E2 MTP / E3 时间尺度）
   S2_RESULTS.md             # S2 结果（E3 已验证协议 / E2 长预算 / E1 热启 GRPO）
   S3_RESULTS.md             # S3 结果（E1 GRPO 稳定化 / E3 尺度确认）
+  S4_RESULTS.md             # S4 结果（E5 多视野统一 / E6 跨域零样本）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
