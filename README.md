@@ -71,6 +71,7 @@ docs/
   S4_RESULTS.md             # S4 结果（E5 多视野统一 / E6 跨域零样本）
   S5_RESULTS.md             # S5 结果（E5 6-seed 确认 / E6 5-seed 确认）
   S6_RESULTS.md             # S6 结果（E5 视野依赖 4/16/64/256）
+  S7_RESULTS.md             # S7 结果（E5 视野边界修复 / 权重模式消融）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
