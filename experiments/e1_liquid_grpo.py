@@ -129,6 +129,13 @@ def grpo(args, seed, device, init_model=None):
     model = build_model(args, seed).to(device)
     if init_model is not None:
         model.load_state_dict(init_model.state_dict())
+    ref_model = None
+    if args.kl > 0:
+        ref_model = build_model(args, seed).to(device)
+        ref_model.load_state_dict(model.state_dict())
+        ref_model.eval()
+        for p in ref_model.parameters():
+            p.requires_grad_(False)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, args.beta2),
                             weight_decay=0.01)
     G = args.g
@@ -148,14 +155,19 @@ def grpo(args, seed, device, init_model=None):
             pred = torch.multinomial(probs, 1).squeeze(-1)   # (B*G,)
 
         r = (pred == ans_g).float().view(-1, G)              # (B, G)
-        adv = (r - r.mean(dim=1, keepdim=True)) / (r.std(dim=1, keepdim=True) + 1e-4)
-        adv = adv.view(-1)
+        adv = (r - r.mean(dim=1, keepdim=True)) / (r.std(dim=1, keepdim=True) + 1e-2)
+        adv = adv.clamp(-args.adv_clip, args.adv_clip).view(-1)
 
         opt.zero_grad(set_to_none=True)
         logits = model(ids_g)["logits"][:, ans_pos - 1]
         logp = torch.log_softmax(logits, -1)
         logp_sel = logp.gather(1, pred.unsqueeze(-1)).squeeze(-1)
         loss = -(logp_sel * adv).mean()
+        if ref_model is not None:
+            with torch.no_grad():
+                ref_logp = torch.log_softmax(ref_model(ids_g)["logits"][:, ans_pos - 1], -1)
+            kl = (logp.exp() * (logp - ref_logp)).sum(-1).mean()
+            loss = loss + args.kl * kl
         loss.backward()
         if args.clip:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -198,6 +210,10 @@ def main():
     ap.add_argument("--grpo_steps", type=int, default=30000)
     ap.add_argument("--g", type=int, default=8, help="group size for GRPO")
     ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--kl", type=float, default=0.0,
+                    help="KL penalty to the initial policy (0 = off); stabilizes near-perfect groups")
+    ap.add_argument("--adv_clip", type=float, default=5.0,
+                    help="clip the group-normalized advantage to +/- this value")
     ap.add_argument("--out", default="results_24h/e1_liquid_grpo.jsonl")
     args = ap.parse_args()
 
