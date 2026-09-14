@@ -74,6 +74,7 @@ docs/
   S7_RESULTS.md             # S7 结果（E5 视野边界修复 / 权重模式消融）
   S7B_RESULTS.md            # S7b 结果（E5 dedicated 重跑 @4000 / 长视野 512）
   S8_RESULTS.md             # S8 结果（E5 模型放大 1040/16L：优势未保持）
+  S9_RESULTS.md             # S9 结果（E5 @125M 长预算 8000 步：长视野优势稳健）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
