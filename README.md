@@ -76,12 +76,15 @@ docs/
   S8_RESULTS.md             # S8 结果（E5 模型放大 1040/16L：优势未保持）
   S9_RESULTS.md             # S9 结果（E5 @125M 长预算 8000 步：长视野优势稳健）
   SUMMARY.md                # C1 实验总览（S1–S10 汇总 + bug 清单）
+  EXPERIMENT_E7_DATA_FORM_PROBE.md  # 数据形态探针（事件边界 vs 固定块）
+  EXPERIMENT_E8_DATA_GENERATION_LOOP.md # 数据生成闭环（流式+surprise+重放）
 experiments/
   e1_liquid_grpo.py         # E1 可跑脚本（parity + GRPO + 长度外推评估）
   e2_mtp.py                 # E2 可跑脚本（baseline/mtp/state-mtp）
   e3_temporal_scaling.py    # E3 可跑脚本（n_scales x topk 矩阵）
   e5_multi_horizon.py       # E5 可跑脚本（unified/dedicated 多视野）
   e6_zero_shot_transfer.py  # E6 可跑脚本（留一域零样本迁移）
+  e7_data_form_probe.py     # E7 可跑脚本（fixed/boundary 切块形态）
   prepare_data_e2.py        # E2 数据管线（WikiText-103 → uint16 .bin）
 requirements.txt            # 独立运行依赖（无需 M1 checkout）
 VENDORED_M1.md              # vendor 溯源（来源/commit/范围）
@@ -93,6 +96,7 @@ README.md
 - 🟡 **E1 液态 GRPO**：监督臂云 GPU 首跑完成——长度外推 acc 1.0 / 0.92 / 0.59 / 0.58 / 0.56（seed0，长度 32→128）；GRPO 臂进行中
 - 🟡 E2（MTP 前瞻）/ E3（时间尺度扩容）：代码就绪 + 冒烟过 CI，待 GPU 全量
 - 🟡 **E5 多视野统一 / E6 跨域零样本（EnergyTS 对标，2026-09 新增）**：设计完成 + 冒烟可跑——短↔长统一头、冷启能力边界
+- 🟡 **E7 数据形态 / E8 数据生成闭环（"数据源 = L1"定性，2026-09-12 新增）**：E7 零 GPU 可全量（事件边界 vs 固定块）；E8 组装流式 + surprise 加权 + genreplay 重放
 - 🟢 进行中：125M 收敛 + selective_decay A/B（DGX Spark）
 - 借鉴基础：MT-LNN 已验证的 O(1) 内存 / 跨窗口记忆 / 稀疏共振 / 预测编码
 

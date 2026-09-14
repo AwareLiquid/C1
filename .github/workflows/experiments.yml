@@ -53,3 +53,11 @@ jobs:
           python experiments/e6_zero_shot_transfer.py --smoke --d_model 104 \
             --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --n_chunks 16 \
             --steps 3 --seeds 0 --out results_smoke/ci_e6.jsonl
+      - name: E7 data-form probe (fixed + boundary smoke)
+        run: |
+          python experiments/e7_data_form_probe.py --mode fixed --smoke --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e7.jsonl
+          python experiments/e7_data_form_probe.py --mode boundary --smoke --d_model 104 \
+            --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e7.jsonl
