@@ -41,14 +41,15 @@ from mt_lnn.model import MTLNNModel  # noqa: E402
 def synthetic_corpus(n_tokens, seq_len, vocab_size, n_topics, seed):
     """Topic-conditioned sentences; returns (tokens, sentence_starts)."""
     rng = np.random.default_rng(seed)
-    topic_probs = [rng.dirichlet(np.ones(vocab_size) * 0.1) for _ in range(n_topics)]
+    # emission over tokens 1..vocab_size-1 (0 is reserved for boundary padding)
+    topic_probs = [rng.dirichlet(np.ones(vocab_size - 1) * 0.1) for _ in range(n_topics)]
     tokens, starts = [], [0]
     topic = 0
     while len(tokens) < n_tokens:
         sent_len = int(rng.geometric(0.12) + 1)  # 1..~60 tokens per sentence
         sent_len = min(sent_len, 96, n_tokens - len(tokens))
         for _ in range(sent_len):
-            tokens.append(int(rng.choice(vocab_size, p=topic_probs[topic])) + 1)
+            tokens.append(int(rng.choice(vocab_size - 1, p=topic_probs[topic])) + 1)
         if len(tokens) < n_tokens:
             starts.append(len(tokens))
             topic = (topic + rng.integers(1, n_tokens // 10 + 1)) % n_topics
