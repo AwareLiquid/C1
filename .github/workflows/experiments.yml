@@ -61,3 +61,14 @@ jobs:
           python experiments/e7_data_form_probe.py --mode boundary --smoke --d_model 104 \
             --n_layers 1 --n_heads 4 --seq_len 32 --vocab_size 200 --steps 3 --seeds 0 \
             --out results_smoke/ci_e7.jsonl
+      - name: E9 denoising pilot (three supervision modes smoke)
+        run: |
+          python experiments/e9_denoising_pilot.py --smoke --mode next_token --d_model 104 \
+            --n_layers 1 --n_heads 4 --n_kv_heads 2 --max_len 16 --batch 8 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e9.jsonl
+          python experiments/e9_denoising_pilot.py --smoke --mode denoise --d_model 104 \
+            --n_layers 1 --n_heads 4 --n_kv_heads 2 --max_len 16 --batch 8 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e9.jsonl
+          python experiments/e9_denoising_pilot.py --smoke --mode progressive --d_model 104 \
+            --n_layers 1 --n_heads 4 --n_kv_heads 2 --max_len 16 --batch 8 --steps 3 --seeds 0 \
+            --out results_smoke/ci_e9.jsonl
