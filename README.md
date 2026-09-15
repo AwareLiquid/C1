@@ -76,6 +76,7 @@ docs/
   S8_RESULTS.md             # S8 结果（E5 模型放大 1040/16L：优势未保持）
   S9_RESULTS.md             # S9 结果（E5 @125M 长预算 8000 步：长视野优势稳健）
   S10_RESULTS.md            # S10 结果（E5 @1040/16L 长预算：优势恢复，S8=欠训练）
+  E7_RESULTS.md             # E7 结果（事件边界形态对语言线无受力面 → DEAD）
   SUMMARY.md                # C1 实验总览（S1–S10 汇总 + bug 清单）
   EXPERIMENT_E7_DATA_FORM_PROBE.md  # 数据形态探针（事件边界 vs 固定块）
   EXPERIMENT_E8_DATA_GENERATION_LOOP.md # 数据生成闭环（流式+surprise+重放）
