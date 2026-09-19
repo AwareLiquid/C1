@@ -7,19 +7,24 @@ load-bearing surface under next-token supervision on discrete static text
 
 E9 swaps the SUPERVISION SIGNAL, not the architecture, on the parity domain
 (proven learnable — ADJ-001 budget-wall lesson):
-  next_token  : clean input -> CE on next token (transformer-standard; baseline)
-  denoise     : corrupted input (bit flips p) -> CE against the CLEAN sequence
-                (predictive-coding data form: corrupted->clean pairs)
+  next_token  : clean input -> answer-only CE (e3 protocol; baseline)
+  denoise     : corrupted input (bit flips p) -> answer-only CE
+                (state-level denoising: the recurrence must filter the noise
+                 to extract the clean parity)
   progressive : K=3 self-refinement passes of denoise (diffusion-like gradual
                 correction); each pass's input = previous pass's argmax output
 
-Metric: length extrapolation (train L<=32 -> test L=48..128), the liquid stack's
+Metric: length extrapolation (train k<=32 -> test k=48..128), the liquid stack's
 signature advantage. Pre-registered: denoise/progressive must beat next_token on
 >=2 extrapolation lengths (3-seed paired sign-test) or H-E9 is DEAD.
 
+Protocol history: v1 (6K steps) budget wall; v2 (full-sequence CE) diluted the
+answer gradient 1/32; v3 (hand-rolled layout) misaligned with the model's
+answer-slot semantics. v4 = gen_parity (the e3-proven generator) end-to-end.
+
 Run:
   python experiments/e9_denoising_pilot.py --smoke --mode denoise --steps 3
-  python experiments/e9_denoising_pilot.py --mode denoise --steps 6000 --seeds 0 1 2
+  python experiments/e9_denoising_pilot.py --mode denoise --steps 20000 --seeds 0 1 2
 """
 import argparse
 import json
@@ -34,41 +39,33 @@ import torch  # noqa: E402
 from mt_lnn.config import MTLNNConfig  # noqa: E402
 from mt_lnn.model import MTLNNModel  # noqa: E402
 
-TOK0, TOK1, LAB0 = 1, 2, 4   # bit tokens + answer base (e3 protocol)
-VOCAB = 200
+# gen_parity lives in the vendored benchmarks (C1 carries a copy of reasoning_tasks)
+from benchmarks.reasoning_tasks import gen_parity  # noqa: E402
+
+VOCAB = 64
 CORRUPT_P = 0.15
 K_PASSES = 3
 
 
-def make_batch(batch, L, p_corrupt, rng, *, clean=False):
-    """Parity batch: L positions (L-1 bits + answer). Corrupted variant flips bits."""
-    xs = rng.integers(0, 2, size=(batch, L - 1)).astype("int64")
-    ys = (xs.sum(axis=1) % 2).astype("int64")
-    if clean or p_corrupt == 0.0:
-        xc = xs.copy()
-    else:
-        flip = rng.random((batch, L - 1)) < p_corrupt
-        xc = xs.copy()
-        xc[flip] = 1 - xc[flip]
-    # input: bits as token stream (answer position fed the masked "?" = TOK1+TOK0? no:
-    # keep e3 layout — last position carries a bit token; the answer is the label there)
-    inp = np.concatenate([xc, np.zeros((batch, 1), dtype="int64")], axis=1) + TOK0
-    # clean full-sequence target (bits + answer), shift-matched below
-    clean_seq = np.concatenate([xs, ys[:, None]], axis=1)  # (B, L)
-    return torch.from_numpy(inp).long(), torch.from_numpy(clean_seq).long()
+def make_batch(batch, k_bits, p_corrupt, rng):
+    """gen_parity batch + bit corruption. Returns (tokens, answer)."""
+    b = gen_parity(batch, k_bits, rng)
+    toks = b.tokens.copy()
+    if p_corrupt > 0.0:
+        flip = rng.random((batch, k_bits)) < p_corrupt
+        bits = toks[:, 1: 1 + k_bits]
+        # bits are VALUE_BASE+0/1 (10/11): XOR the low bit with 1
+        bits[flip] ^= 1
+    return torch.from_numpy(toks).long(), torch.from_numpy(b.answer).long()
 
 
-def forward_loss(model, inp, clean_seq, device):
-    """One model pass; CE of position t's logits against clean_seq[t+1]
-    (M1 shift semantics — e1/e3 protocol). Returns (loss, argmax_tokens)."""
+def forward_loss(model, inp, answer, device):
+    """Answer-only CE (e3 protocol): labels[:, -1] = answer, predicted from T-2."""
     labels = torch.full_like(inp, -100)
-    labels[:, -1] = clean_seq[:, -1] + LAB0  # answer-only supervision (e3 protocol):
-    # denoising happens at the STATE level — corrupted input flows through the
-    # recurrence and the model must extract the clean parity to answer.
-    # (v1/v2 full-sequence CE diluted the answer gradient 1/32 -> never grokked)
+    labels[:, -1] = answer
     out = model(inp.to(device), labels=labels.to(device))
     with torch.no_grad():
-        pred_tokens = out["logits"].argmax(-1)  # (B, L) — position t predicts t+1
+        pred_tokens = out["logits"].argmax(-1)
     return out["loss"], pred_tokens
 
 
@@ -76,7 +73,7 @@ def build_cfg(args):
     return MTLNNConfig(
         d_model=args.d_model, n_layers=args.n_layers, n_heads=args.n_heads,
         n_kv_heads=args.n_kv_heads, d_head=args.d_model // args.n_heads,
-        max_seq_len=args.max_len, vocab_size=VOCAB,
+        max_seq_len=args.max_seq_len, vocab_size=VOCAB,
         gwtb_n_heads=1,
     )
 
@@ -86,46 +83,43 @@ def train_eval(args, seed, mode):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rng = np.random.default_rng(seed)
     model = MTLNNModel(build_cfg(args)).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.999),
+                            weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.steps)
 
     step = 0
     while step < args.steps:
-        L = int(rng.integers(args.min_len, args.max_len + 1))
+        k = int(rng.integers(args.min_len, args.max_len + 1))
         p = 0.0 if mode == "next_token" else args.corrupt_p
-        inp, clean_seq = make_batch(args.batch, L, p, rng)
-        opt.zero_grad()
+        inp, answer = make_batch(args.batch, k, p, rng)
+        opt.zero_grad(set_to_none=True)
         total = 0.0
         cur_inp = inp
         n_passes = 1 if mode != "progressive" else K_PASSES
-        for k in range(n_passes):
-            loss, pred_tokens = forward_loss(model, cur_inp, clean_seq, device)
-            w = 1.0 / (k + 1)  # later passes weigh less (progressive refinement)
+        for kpass in range(n_passes):
+            loss, pred_tokens = forward_loss(model, cur_inp, answer, device)
+            w = 1.0 / (kpass + 1)
             (w * loss).backward()
             total += loss.item()
-            if k + 1 < n_passes:
-                # self-conditioning: next pass input = previous argmax (shift-rough,
-                # pilot-grade refinement signal)
+            if kpass + 1 < n_passes:
                 cur_inp = torch.cat(
                     [inp[:, :1].to(device), pred_tokens[:, :-1]], dim=1)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         sched.step()
         step += 1
-        if step % 500 == 0:
+        if step % 2000 == 0:
             print(f"  [{mode} seed{seed}] step {step} loss {total:.3f}", flush=True)
 
-    # eval: length extrapolation (clean inputs, answer via position L-2 logits)
     model.eval()
     accs = {}
     with torch.no_grad():
         for L in (32, 48, 64, 96, 128):
-            xs = rng.integers(0, 2, size=(256, L)).astype("int64")
-            ys = (xs.sum(axis=1) % 2).astype("int64")
-            xs_t = torch.from_numpy(xs + TOK0).to(device)
-            lab_t = torch.from_numpy(ys + LAB0).to(device)
-            out = model(xs_t)
-            pred = out["logits"][:, -2].argmax(-1)
+            b = gen_parity(256, L, np.random.default_rng(10_000 + seed))
+            ids = torch.from_numpy(b.tokens).to(device)
+            lab_t = torch.from_numpy(b.answer).to(device)
+            out = model(ids)
+            pred = out["logits"][:, -2].argmax(-1)  # T-2 (THINK) predicts ANS
             accs[L] = round((pred == lab_t).float().mean().item(), 3)
     print(f"  [{mode} seed{seed}] extrap accs={accs}", flush=True)
     return {"mode": mode, "seed": seed, "accs": accs, "steps": args.steps,
@@ -143,10 +137,12 @@ def main():
     ap.add_argument("--n_kv_heads", type=int, default=2)
     ap.add_argument("--min_len", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=32)
+    ap.add_argument("--max_seq_len", type=int, default=140,
+                    help="model max_seq_len (covers eval L=128 + BOS/THINK/ANS)")
     ap.add_argument("--corrupt_p", type=float, default=CORRUPT_P)
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--steps", type=int, default=6000)
+    ap.add_argument("--steps", type=int, default=20000)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--out", default="results/e9_denoising_pilot.jsonl")
