@@ -62,8 +62,10 @@ def forward_loss(model, inp, clean_seq, device):
     """One model pass; CE of position t's logits against clean_seq[t+1]
     (M1 shift semantics — e1/e3 protocol). Returns (loss, argmax_tokens)."""
     labels = torch.full_like(inp, -100)
-    labels[:, :-1] = clean_seq[:, 1:] + TOK0
-    labels[:, -1] = clean_seq[:, -1] + LAB0  # answer supervision at last position
+    labels[:, -1] = clean_seq[:, -1] + LAB0  # answer-only supervision (e3 protocol):
+    # denoising happens at the STATE level — corrupted input flows through the
+    # recurrence and the model must extract the clean parity to answer.
+    # (v1/v2 full-sequence CE diluted the answer gradient 1/32 -> never grokked)
     out = model(inp.to(device), labels=labels.to(device))
     with torch.no_grad():
         pred_tokens = out["logits"].argmax(-1)  # (B, L) — position t predicts t+1
