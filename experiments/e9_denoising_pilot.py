@@ -135,7 +135,9 @@ def main():
     ap.add_argument("--n_layers", type=int, default=4)
     ap.add_argument("--n_heads", type=int, default=8)
     ap.add_argument("--n_kv_heads", type=int, default=2)
-    ap.add_argument("--min_len", type=int, default=8)
+    ap.add_argument("--min_len", type=int, default=1,
+                    help="shortest k_bits in training mix (e3 starts at 1; "
+                         "v4 used 8 and never grokked)")
     ap.add_argument("--max_len", type=int, default=32)
     ap.add_argument("--max_seq_len", type=int, default=140,
                     help="model max_seq_len (covers eval L=128 + BOS/THINK/ANS)")
